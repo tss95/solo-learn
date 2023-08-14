@@ -65,6 +65,9 @@ class AutoUMAP(Callback):
 
         self.name = name
         self.logdir = Path(logdir)
+        if not self.logdir.exists():
+            self.logdir.mkdir(parents=True)
+            print("Created directory for umap:", self.logdir)
         self.frequency = frequency
         self.color_palette = color_palette
         self.keep_previous = keep_previous
@@ -134,7 +137,7 @@ class AutoUMAP(Callback):
 
         self.initial_setup(trainer)
 
-    def plot(self, trainer: pl.Trainer, module: pl.LightningModule):
+    def plot_validation(self, trainer: pl.Trainer, module: pl.LightningModule):
         """Produces a UMAP visualization by forwarding all data of the
         first validation dataloader through the module.
 
@@ -143,10 +146,11 @@ class AutoUMAP(Callback):
             module (pl.LightningModule): current module object.
         """
 
+
         device = module.device
         data = []
         Y = []
-
+        
         # set module to eval model and collect all feature representations
         module.eval()
         with torch.no_grad():
@@ -208,6 +212,73 @@ class AutoUMAP(Callback):
             epoch = trainer.current_epoch  # type: ignore
             plt.savefig(self.path / self.umap_placeholder.format(epoch))
             plt.close()
+    
+    def plot_train(self, trainer: pl.Trainer, module: pl.LightningModule):
+        """Produces a UMAP visualization by forwarding all data of the
+        first training dataloader through the module.
+
+        Args:
+            trainer (pl.Trainer): pytorch lightning trainer object.
+            module (pl.LightningModule): current module object.
+        """
+        device = module.device
+        data = []
+        # set module to eval model and collect all feature representations
+        module.eval()
+        n_batches = 8
+        n_total_batches = len(trainer.train_dataloader)
+        selected_batches = random.sample(range(n_total_batches), min(n_batches, n_total_batches))
+
+        
+        with torch.no_grad():
+            for batch_idx, x in enumerate(trainer.train_dataloader):
+                if batch_idx not in selected_batches:
+                    continue
+                if len(x) == 2:
+                    _, x = x
+                else:
+                    _,x,_ = x
+                for img in x:
+                    img = img.to(device, non_blocking=True)
+                    #print(img)
+                    feats = module(img)["feats"]
+
+                    feats = gather(feats)
+                    data.append(feats.cpu())
+        module.train()
+        if trainer.is_global_zero and len(data):
+            data = torch.cat(data, dim=0).numpy()
+
+            data = umap.UMAP(n_components=2).fit_transform(data)
+
+            # passing to dataframe
+            df = pd.DataFrame()
+            df["feat_1"] = data[:, 0]
+            df["feat_2"] = data[:, 1]
+
+            plt.figure(figsize=(9, 9))
+            ax = sns.scatterplot(
+                x="feat_1",
+                y="feat_2",
+                data=df,
+                alpha=0.3,
+            )
+            ax.set(xlabel="", ylabel="", xticklabels=[], yticklabels=[])
+            ax.tick_params(left=False, right=False, bottom=False, top=False)
+
+            plt.tight_layout()
+
+            if isinstance(trainer.logger, pl.loggers.WandbLogger):
+                wandb.log(
+                    {"training_umap": wandb.Image(ax)},
+                    commit=False,
+                )
+
+            # save plot locally as well
+            epoch = trainer.current_epoch  # type: ignore
+            plt.savefig(self.path / self.umap_placeholder.format(epoch))
+            plt.close()
+
 
     def on_validation_end(self, trainer: pl.Trainer, module: pl.LightningModule):
         """Tries to generate an up-to-date UMAP visualization of the features
@@ -219,7 +290,19 @@ class AutoUMAP(Callback):
 
         epoch = trainer.current_epoch  # type: ignore
         if epoch % self.frequency == 0 and not trainer.sanity_checking:
-            self.plot(trainer, module)
+            self.plot_director(trainer, module, dataloader = "val")
+            
+    def on_train_epoch_end(self, trainer: pl.Trainer, module: pl.LightningModule) -> None:
+        epoch = trainer.current_epoch  # type: ignore
+        
+        if epoch % self.frequency == 0 and not trainer.sanity_checking:
+            self.plot_director(trainer, module, dataloader = "train")
+            
+    def plot_director(self, trainer: pl.Trainer, module: pl.LightningModule, dataloader: str):
+        assert dataloader in ["train", "val"]
+        if dataloader == "val":
+            return self.plot_validation(trainer, module)
+        # return self.plot_train(trainer, module)
 
 
 class OfflineUMAP:

@@ -37,7 +37,7 @@ else:
     _h5_available = True
 
 
-def build_custom_pipeline():
+def build_custom_pipeline(mean = None, std = None):
     """Builds augmentation pipelines for custom data.
     If you want to do exoteric augmentations, you can just re-write this function.
     Needs to return a dict with the same structure.
@@ -46,18 +46,19 @@ def build_custom_pipeline():
     pipeline = {
         "T_train": transforms.Compose(
             [
-                transforms.RandomResizedCrop(size=224, scale=(0.08, 1.0)),
+                #transforms.RandomResizedCrop(size=224, scale=(0.08, 1.0)),
+                transforms.Resize(224),
                 transforms.RandomHorizontalFlip(),
                 transforms.ToTensor(),
-                transforms.Normalize(mean=IMAGENET_DEFAULT_MEAN, std=IMAGENET_DEFAULT_STD),
+                #transforms.Normalize(mean=IMAGENET_DEFAULT_MEAN, std=IMAGENET_DEFAULT_STD),
             ]
         ),
         "T_val": transforms.Compose(
             [
-                transforms.Resize(256),  # resize shorter
-                transforms.CenterCrop(224),  # take center crop
+                transforms.Resize(224),  # resize shorter
+                #transforms.CenterCrop(224),  # take center crop
                 transforms.ToTensor(),
-                transforms.Normalize(mean=IMAGENET_DEFAULT_MEAN, std=IMAGENET_DEFAULT_STD),
+                #transforms.Normalize(mean=IMAGENET_DEFAULT_MEAN, std=IMAGENET_DEFAULT_STD),
             ]
         ),
     }

@@ -285,7 +285,6 @@ class LinearModel(pl.LightningModule):
         Returns:
             Dict[str, Any]: a dict containing features and logits.
         """
-
         if not self.no_channel_last:
             X = X.to(memory_format=torch.channels_last)
 
@@ -320,10 +319,12 @@ class LinearModel(pl.LightningModule):
         else:
             out = self(X)["logits"]
             loss = F.cross_entropy(out, target)
-            acc1, acc5 = accuracy_at_k(out, target, top_k=(1, 5))
+            acc1, acc5 = accuracy_at_k(out, target, top_k=(1, out.size(1)))
             metrics.update({"loss": loss, "acc1": acc1, "acc5": acc5})
 
         return metrics
+    
+
 
     def training_step(self, batch: torch.Tensor, batch_idx: int) -> torch.Tensor:
         """Performs the training step for the linear eval.
